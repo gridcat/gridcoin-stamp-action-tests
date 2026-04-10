@@ -52,3 +52,4 @@ Actions → **Cleanup old e2e releases** → Run workflow. Deletes `e2e-*` relea
 - `stamp.yml` pins `gridcat/gridcoin-stamp-action@v1`. If no `v1` tag exists on the action repo yet, switch to `@main` temporarily.
 - If `GITHUB_TOKEN` default permission in repo settings is read-only, the action's upload step 403s. Set it to Read and write, or rely on the job-level `permissions: contents: write`.
 - Fixtures are deterministic (no timestamps, no random bytes) so rerun-idempotency testing produces identical SHA-256s across runs.
+bump
