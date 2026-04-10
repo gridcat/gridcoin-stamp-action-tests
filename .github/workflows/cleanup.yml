@@ -1,0 +1,38 @@
+name: Cleanup old e2e releases
+
+# Manual-trigger hygiene job: deletes e2e-* releases (and their git tags)
+# older than the specified cutoff so the releases tab doesn't accumulate
+# hundreds of test entries over time. Intentionally NOT scheduled — the
+# user runs it when they feel like pruning.
+
+on:
+  workflow_dispatch:
+    inputs:
+      older_than_days:
+        description: 'Delete e2e-* releases older than this many days'
+        type: number
+        default: 7
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete old e2e releases
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          OLDER_THAN_DAYS: ${{ inputs.older_than_days }}
+        run: |
+          cutoff=$(( $(date +%s) - OLDER_THAN_DAYS * 86400 ))
+          echo "Deleting e2e-* releases older than $(date -u -d "@$cutoff" +%Y-%m-%dT%H:%M:%SZ)"
+
+          gh release list --limit 200 --json tagName,createdAt \
+            | jq -r --argjson cutoff "$cutoff" \
+                '.[] | select(.tagName | startswith("e2e-")) | select(((.createdAt | fromdateiso8601) < $cutoff)) | .tagName' \
+            | while read -r tag; do
+                if [ -n "$tag" ]; then
+                  echo "Deleting $tag"
+                  gh release delete "$tag" --yes --cleanup-tag
+                fi
+              done

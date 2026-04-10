@@ -1,0 +1,7 @@
+{
+  "name": "gridcoin-stamp-action e2e test fixture",
+  "type": "end-to-end",
+  "purpose": "exercise the include-release-assets code path with a JSON payload",
+  "deterministic": true,
+  "version": 1
+}

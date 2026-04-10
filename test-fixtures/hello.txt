@@ -1,0 +1,5 @@
+Hello from gridcoin-stamp-action-tests.
+
+This file is a test fixture attached to e2e releases as a pre-existing
+release asset, to exercise the include-release-assets code path of
+gridcoin-stamp-action.

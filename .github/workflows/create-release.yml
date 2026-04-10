@@ -1,0 +1,78 @@
+name: Create test release
+
+# Creates a real GitHub release whose tag encodes which scenario to exercise.
+# The tag format is e2e-<scenario>-<timestamp>; `stamp.yml` reads that prefix
+# and picks the right gridcoin-stamp-action input combination.
+#
+# Uses a PAT (`PAT_TOKEN` repo secret) rather than the default GITHUB_TOKEN,
+# because releases created by GITHUB_TOKEN do NOT fire the `release: published`
+# event on other workflows — GitHub suppresses that to prevent recursive
+# workflow loops. A PAT makes the release look "human-authored" and lets the
+# downstream stamping workflow trigger normally.
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'Which test scenario to exercise'
+        type: choice
+        required: true
+        default: basic
+        options:
+          - basic
+          - with-uploads
+          - no-source-archives
+          - manifest-only
+          - wait-for-confirmation
+          - rerun-idempotency
+          - tag-mutation
+      upload_fixtures:
+        description: 'Attach test fixture files as release assets (forced on for with-uploads)'
+        type: boolean
+        default: false
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate unique tag
+        id: tag
+        env:
+          SCENARIO: ${{ inputs.scenario }}
+        run: |
+          TAG="e2e-${SCENARIO}-$(date -u +%Y%m%d-%H%M%S)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Generated tag: $TAG"
+
+      - name: Create and push git tag
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git config user.name "gridcoin-stamp-action-tests"
+          git config user.email "noreply@gridcoin.club"
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          SCENARIO: ${{ inputs.scenario }}
+          UPLOAD_FIXTURES: ${{ inputs.upload_fixtures }}
+        run: |
+          # `with-uploads` always includes fixtures; other scenarios honor the flag.
+          ASSETS=()
+          if [ "$SCENARIO" = "with-uploads" ] || [ "$UPLOAD_FIXTURES" = "true" ]; then
+            ASSETS=(test-fixtures/hello.txt test-fixtures/notes.md test-fixtures/data.json)
+          fi
+
+          NOTES="Automated e2e test release for scenario **${SCENARIO}**. The Blockchain Timestamps section will appear below once the stamp workflow finishes (~30s). See [gridcoin-stamp-action](https://github.com/gridcat/gridcoin-stamp-action) for the action under test."
+
+          gh release create "$TAG" \
+            --title "E2E: ${SCENARIO}" \
+            --notes "$NOTES" \
+            "${ASSETS[@]}"

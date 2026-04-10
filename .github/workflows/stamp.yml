@@ -1,0 +1,68 @@
+name: Stamp test release
+
+# Fires automatically when create-release.yml publishes a new e2e release,
+# parses the scenario out of the tag prefix, and invokes gridcoin-stamp-action
+# with the matching input combination. Re-runnable from the Actions UI to
+# exercise the rerun-idempotency and tag-mutation scenarios.
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  stamp:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Determine scenario config from tag
+        id: scenario
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          echo "Parsing scenario from tag: $TAG"
+
+          # Defaults — overridden per scenario below.
+          include_source=true
+          include_assets=true
+          wait=false
+          poll_timeout=300
+
+          case "$TAG" in
+            e2e-basic-*|e2e-with-uploads-*|e2e-rerun-idempotency-*|e2e-tag-mutation-*)
+              # All defaults — these scenarios vary in WHAT the release
+              # contains and HOW the action is re-run, not in its inputs.
+              ;;
+            e2e-no-source-archives-*)
+              include_source=false
+              ;;
+            e2e-manifest-only-*)
+              include_source=false
+              include_assets=false
+              ;;
+            e2e-wait-for-confirmation-*)
+              wait=true
+              poll_timeout=600
+              ;;
+            *)
+              echo "::warning::Unknown e2e tag pattern: $TAG — falling back to defaults"
+              ;;
+          esac
+
+          {
+            echo "include_source=$include_source"
+            echo "include_assets=$include_assets"
+            echo "wait=$wait"
+            echo "poll_timeout=$poll_timeout"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Resolved config: include_source=$include_source include_assets=$include_assets wait=$wait poll_timeout=$poll_timeout"
+
+      - name: Stamp the release
+        uses: gridcat/gridcoin-stamp-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          include-source-archives: ${{ steps.scenario.outputs.include_source }}
+          include-release-assets: ${{ steps.scenario.outputs.include_assets }}
+          wait-for-confirmation: ${{ steps.scenario.outputs.wait }}
+          poll-timeout: ${{ steps.scenario.outputs.poll_timeout }}
