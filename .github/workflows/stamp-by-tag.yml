@@ -1,0 +1,79 @@
+name: Stamp by tag (no release event)
+
+# Exercises the action's `tag:` input path, which looks the release up via
+# the GitHub API instead of reading it from the event payload. This is the
+# code path goreleaser / semantic-release users land on when they create
+# the release themselves inside a `push: tags` workflow (or a
+# semantic-release workflow that uses the stock GITHUB_TOKEN).
+#
+# Deliberately self-contained: create tag, create release with
+# GITHUB_TOKEN (which does NOT fan out `release: published` to other
+# workflows — that's the whole point of this scenario, so stamp.yml must
+# stay silent), then call the action in the same job with `tag:` pointing
+# at the freshly-created release. No PAT required; if this workflow goes
+# green, both goreleaser and same-workflow semantic-release users are
+# unblocked on vanilla repo permissions.
+#
+# If this run ever kicks off stamp.yml as well, something regressed —
+# either GitHub changed the GITHUB_TOKEN fan-out rules or someone wired
+# stamp.yml to a trigger other than `release: published`.
+#
+# Security: no untrusted external inputs are interpolated into any `run:`
+# body. The tag is generated from `date` inside the workflow, and every
+# other `${{ }}` expression is exposed via `env:` (the safe pattern from
+# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/).
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload_fixtures:
+        description: 'Attach test fixture files as release assets'
+        type: boolean
+        default: false
+
+jobs:
+  create-and-stamp:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate unique tag
+        id: tag
+        run: |
+          TAG="e2e-tag-input-$(date -u +%Y%m%d-%H%M%S)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Generated tag: $TAG"
+
+      - name: Create and push git tag
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git config user.name "gridcoin-stamp-action-tests"
+          git config user.email "noreply@gridcoin.club"
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub release (via GITHUB_TOKEN — no fan-out)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          UPLOAD_FIXTURES: ${{ inputs.upload_fixtures }}
+        run: |
+          ASSETS=()
+          if [ "$UPLOAD_FIXTURES" = "true" ]; then
+            ASSETS=(test-fixtures/hello.txt test-fixtures/notes.md test-fixtures/data.json)
+          fi
+
+          NOTES="Automated e2e test release exercising the \`tag:\` input. Created with GITHUB_TOKEN so the \`release: published\` event will NOT fan out to stamp.yml — the stamp happens in the next step of this same job, via the action's tag-lookup path."
+
+          gh release create "$TAG" \
+            --title "E2E: tag-input" \
+            --notes "$NOTES" \
+            "${ASSETS[@]}"
+
+      - name: Stamp the release via the tag input
+        uses: gridcat/gridcoin-stamp-action@v1
+        with:
+          tag: ${{ steps.tag.outputs.tag }}

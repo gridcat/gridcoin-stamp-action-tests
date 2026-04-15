@@ -43,6 +43,16 @@ The `upload_fixtures` toggle on `create-release.yml` attaches `test-fixtures/*` 
 3. Re-run `stamp.yml` from the Actions UI.
 4. Expected: run **fails** with `Error: Tag mutation detected: ...`. If it succeeds, the preflight is broken.
 
+## `tag:` input scenario (no release event, no PAT)
+
+Separate entry point: Actions → **Stamp by tag (no release event)** → Run workflow.
+
+Exercises the `tag:` input path that goreleaser and same-workflow semantic-release users land on. Self-contained single job — creates the release with the default `GITHUB_TOKEN` (which deliberately does **not** fan out `release: published` to `stamp.yml`) and then calls the action in the same job with `tag: ${{ steps.tag.outputs.tag }}`.
+
+**Expected:** the run stamps the release successfully without a PAT, and `stamp.yml` stays idle for the generated `e2e-tag-input-*` tag. If `stamp.yml` also fires, either GitHub changed its `GITHUB_TOKEN` fan-out rules or `stamp.yml` got wired to a non-release trigger — investigate before merging.
+
+This is the only scenario that proves the `tag:` input works; the payload-based path is covered by every other scenario via `stamp.yml`.
+
 ## Cleanup
 
 Actions → **Cleanup old e2e releases** → Run workflow. Deletes `e2e-*` releases and their tags older than `older_than_days` (default 7). Not scheduled — run manually.
